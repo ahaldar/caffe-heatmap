@@ -15,7 +15,7 @@ Multiple implementations are provided, using the PyCaffe interface for Python3, 
 
 ## Testing instructions
 
-For example codes for running the FLIC model on a video, use the following:
+For example codes for running the FLIC model on a video, use the following:   
 demo.m (on Matlab version 2015 or earlier)   
 python python/pose/demo.py   
 ./build/examples/cpp_heatmap/demo.bin (generated automatically on running "make")   
