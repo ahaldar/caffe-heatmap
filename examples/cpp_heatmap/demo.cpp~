@@ -1,0 +1,242 @@
+/* This file uses a FLIC trained model and applies it to a video sequence from Poses in the Wild
+ *
+ * Download the model:
+ *    wget http://tomas.pfister.fi/models/caffe-heatmap-flic.caffemodel -P ../../models/heatmap-flic-fusion/
+ */
+
+#include <caffe/caffe.hpp>
+#ifdef USE_OPENCV
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
+#endif  // USE_OPENCV
+#include <algorithm>
+#include <iosfwd>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+#include <stdio.h>
+#include<iostream>
+#include <ctime>
+
+//#include "demo.hpp"
+
+#ifdef USE_OPENCV
+using namespace caffe;  // NOLINT(build/namespaces)
+using namespace std;
+using namespace cv;
+
+
+//Options
+class Options{
+public:
+  bool visualise;
+  bool useGPU;
+  int dims[2];
+  int numJoints;
+  char layerName[20];
+  char modelDefFile[80];
+  char modelFile[80];
+  char inputDir[40];
+  int numFiles;
+  
+  Options();
+};
+
+class applyNet{
+
+public:
+  applyNet(Options opt);
+  
+  void printOptions(Options opt);
+  void initCaffe(Options opt);
+  void applyNetImages(char files[][10], Options opt, vector< vector<vector<int> > > &joints);
+  vector<vector<int> > applyNetImage(char file[10], Options opt);
+  Mat prepareImagePose(Mat img, Options opt);
+  vector<vector<vector<int> > > processHeatmap(Blob<float>* features, Options opt);
+
+private:
+  shared_ptr<Net<float> > net;
+  Size input_geometry;
+  int num_channels;
+};
+
+
+Options::Options(){
+  visualise = true; // Visualise predictions
+  useGPU = true; // Run on GPU
+  dims[0] = 256; dims[1] = 256; // Input dimensions
+  numJoints = 7; // Number of joints
+  strcpy(layerName, "conv5_fusion"); // Output layer name
+  strcpy(modelDefFile, "models/heatmap-flic-fusion/matlab.prototxt"); // Model definition
+  strcpy(modelFile,  "models/heatmap-flic-fusion/caffe-heatmap-flic.caffemodel");// Model weights    
+  strcpy(inputDir, "examples/cpp_heatmap/my_sample/"); // Image input directory
+  numFiles = 29; // Number of input images  
+}
+
+
+void applyNet::printOptions(Options opt){
+  printf("config:\n");
+  printf("%s\n", opt.visualise ? "true" : "false");
+  printf("%s\n", opt.useGPU ? "true" : "false");
+  printf("[%d, %d]\n", opt.dims[0], opt.dims[1]);
+  printf("%d\n", opt.numJoints);
+  printf("%s\n", opt.layerName);
+  printf("%s\n", opt.modelDefFile);
+  printf("%s\n", opt.modelFile);
+  printf("%s\n", opt.inputDir);
+  printf("%d\n", opt.numFiles);
+  printf("\n");
+
+  return;
+}
+
+applyNet::applyNet(Options opt){
+  // Initialise caffe
+
+#ifdef CPU_ONLY
+  Caffe::set_mode(Caffe::CPU);
+#else
+  Caffe::set_mode(Caffe::GPU);
+  int gpu_id = 0;
+  Caffe::SetDevice(gpu_id);
+#endif
+
+  /* Load the network. */
+  this->net.reset(new Net<float>(opt.modelDefFile, TEST));
+  this->net->CopyTrainedLayersFrom(opt.modelFile);
+
+  Blob<float>* input_layer = net->input_blobs()[0];
+  num_channels = input_layer->channels();
+  input_geometry = Size(input_layer->width(), input_layer->height());
+  Blob<float>* output_layer = net->output_blobs()[0];
+}
+
+void applyNet::applyNetImages(char files[][10], Options opt, vector< vector<vector<int> > > &joints){
+  // Apply network separately to each image
+  for (int ind = 0; ind < opt.numFiles; ind++){
+    joints[ind] = applyNetImage(files[ind], opt);
+    //if (opt.visualise)
+    //  cin.get();
+  }
+
+  return;
+}
+
+vector<vector<int> > applyNet::applyNetImage(char file[10], Options opt){
+  // Apply network to a single image
+
+  vector<vector<int> > j (2, vector<int>(opt.numJoints, 0));
+
+  // Read & reformat input image
+  Mat img;
+  //printf("%s\n",strcat(opt.inputDir,file));
+  img = imread(strcat(opt.inputDir,file), IMREAD_COLOR);   // Read the file into BGR channels 
+  //namedWindow( "Display window", WINDOW_AUTOSIZE );
+  //imshow( "Display window", img );
+  //waitKey(0);
+
+  Mat input_data;
+  input_data = prepareImagePose(img, opt);
+
+  // Forward pass
+  clock_t start = clock();
+
+  // Blob<float> input_blob;
+  //input_blob.Reshape(1, input_data.channels(), input_data.rows, input_data.cols );
+  //cout << input_blob.shape(0) <<"x"<< input_blob.shape(1) <<"x"<< input_blob.shape(2) <<"x"<< input_blob.shape(3) <<"\n";
+  //vector<Blob<float>*> input;
+  //input.push_back( &input_blob );
+  //cout << input.size() <<"x" << input[0]->shape(0) <<"x"<< input[0]->shape(1) <<"x"<< input[0]->shape(2) <<"x"<< input[0]->shape(3) <<"\n";
+  //vector<Blob<float>*> features = net->Forward(input);
+  //cout << features.size() <<"x" << features[0]->shape(0) <<"x"<< features[0]->shape(1) <<"x"<< features[0]->shape(2) <<"x"<< features[0]->shape(3) <<"\n";
+
+  Blob<float>* input_layer = net->input_blobs()[0];
+  input_layer->Reshape(1, num_channels, input_geometry.height, input_geometry.width);
+  //cout << input_layer->shape(0) <<"x"<< input_layer->shape(1) <<"x"<< input_layer->shape(2) <<"x"<< input_layer->shape(3) <<"\n"; //1x3x256x256
+  /* Forward dimension change to all layers. */
+  net->Reshape();
+  net->Forward();
+  /* Copy the output layer to a std::vector */
+  Blob<float>* output_layer = net->output_blobs()[0];
+  //cout << output_layer->shape(0) <<"x"<< output_layer->shape(1) <<"x"<< output_layer->shape(2) <<"x"<< output_layer->shape(3) <<"\n"; //1x7x64x64
+  //Blob<float> output;
+  //output.Reshape( output_layer->num(), output_layer->channels(), output_layer->height(), output_layer->width() );
+  //cout << output.shape(0) <<"x"<< output.shape(1) <<"x"<< output.shape(2) <<"x"<< output.shape(3) <<"\n"; //1x7x64x64
+  float* output = output_layer->mutable_cpu_data();
+  for(int i=0; i<64*64; i++ )
+    cout << output[i] <<"\t";
+  vector<vector<vector<int> > > heatmaps (7, vector<vector<int> >(256, vector<int>(256, 0)));
+  heatmaps = processHeatmap(output_layer, opt); //7x256x256
+  
+  clock_t end = clock();
+  clock_t duration = end - start / (double) CLOCKS_PER_SEC;
+  cout << duration << "\n";
+
+  // Visualisation
+  if (opt.visualise){
+    
+  }
+
+  return j;
+}
+
+Mat applyNet::prepareImagePose(Mat img, Options opt){
+  // Prepare input image for caffe: change to single & permute color channels
+
+  Mat imgOut = img;
+  Mat channels[3], tmp1, tmp2;
+  split(imgOut, channels);
+  tmp1 = channels[0];
+  tmp2 = channels[1];
+  channels[0] = channels[2];
+  channels[1] = tmp1;
+  channels[2] = tmp2;
+  merge(channels, 3, imgOut);
+  imgOut.convertTo(imgOut, CV_32FC1);
+  return imgOut;
+}
+
+vector<vector<vector<int> > > applyNet::processHeatmap(Blob<float>* output_layer, Options opt){
+  // Reformat output heatmap: rotate & permute color channels
+  vector<vector<vector<int> > > out (7, vector<vector<int> >(256, vector<int>(256, 0)));
+  Size size(256, 256);
+  //resize(output_layer[0][0], out[0], size, 0, 0, INTER_CUBIC);
+  //resize(output_layer[0][1], out[1], size, 0, 0, INTER_CUBIC);
+  //resize(output_layer[0][2], out[2], size, 0, 0, INTER_CUBIC);
+  //resize(output_layer[0][3], out[3], size, 0, 0, INTER_CUBIC);
+  //resize(output_layer[0][4], out[4], size, 0, 0, INTER_CUBIC);
+  //resize(output_layer[0][5], out[5], size, 0, 0, INTER_CUBIC);
+  //resize(output_layer[0][6], out[6], size, 0, 0, INTER_CUBIC);
+  //cout << out.size() <<"x"<< out[0].size() <<"x"<< out[0][0].size() <<"\n";
+  return out;
+}
+
+int main(){
+
+  Options opt;
+  applyNet app(opt);
+  
+  char files[opt.numFiles][10];
+  //Create image file list
+  for (int ind = 0; ind < opt.numFiles; ind++){
+    sprintf(files[ind], "%d.png", ind+1);
+    //printf("%s\n", files[ind]);
+  }
+
+  // Apply network
+  vector<vector<vector<int> > > joints (opt.numFiles, vector<vector<int> >(2, vector <int>(opt.numJoints, 0)));
+  // Run network on multiple images
+  app.printOptions(opt);
+  // Run network on multiple images
+  app.applyNetImages(files, opt, joints);
+  
+  return 0;
+}
+
+#else
+int main(int argc, char** argv) {
+  LOG(FATAL) << "This example requires OpenCV; compile with USE_OPENCV.";
+}
+#endif  // USE_OPENCV
