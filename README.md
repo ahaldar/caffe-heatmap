@@ -1,7 +1,37 @@
-# Caffe
+# Caffe-heatmap
 
-[![Build Status](https://travis-ci.org/BVLC/caffe.svg?branch=master)](https://travis-ci.org/BVLC/caffe)
-[![License](https://img.shields.io/badge/license-BSD-blue.svg)](LICENSE)
+This is a fork of Caffe that enables training of heatmap regressor ConvNets for the general problem of regressing (x,y) positions in images.   
+Multiple implementations are provided, using the PyCaffe interface for Python3, the MatCaffe interface for Matlab, and the standard C++ Caffe API.
+
+
+## Pretrained models
+- [Fusion model trained on FLIC](http://tomas.pfister.fi/models/caffe-heatmap-flic.caffemodel)
+- [Fusion model trained on ChaLearn](http://tomas.pfister.fi/models/caffe-heatmap-chalearn.caffemodel)
+
+## Pre-cropped images and training labels for FLIC
+- [Training](http://tomas.pfister.fi/flic_train_cropped_multfact282.tgz)
+- [Testing](http://tomas.pfister.fi/flic_test_cropped_multfact282.tgz)
+- Note these files require multfact=282 in both training and testing data layers
+
+## Testing instructions
+
+For example codes for running the FLIC model on a video, use the following:
+demo.m (on Matlab version 2015 or earlier)   
+python python/pose/demo.py   
+./build/examples/cpp_heatmap/demo.bin (generated automatically on running "make")   
+
+## Paper
+Please cite our [ICCV'15 paper](http://www.robots.ox.ac.uk/~vgg/publications/2015/Pfister15a/pfister15a.pdf) in your publications if this code helps your research:
+
+      @InProceedings{Pfister15a,
+        author       = "Pfister, T. and Charles, J. and Zisserman, A.",
+        title        = "Flowing ConvNets for Human Pose Estimation in Videos",
+        booktitle    = "IEEE International Conference on Computer Vision",
+        year         = "2015",
+      }
+
+
+# Caffe
 
 Caffe is a deep learning framework made with expression, speed, and modularity in mind.
 It is developed by the Berkeley Vision and Learning Center ([BVLC](http://bvlc.eecs.berkeley.edu)) and community contributors.
@@ -35,3 +65,4 @@ Please cite Caffe in your publications if it helps your research:
       Title = {Caffe: Convolutional Architecture for Fast Feature Embedding},
       Year = {2014}
     }
+
